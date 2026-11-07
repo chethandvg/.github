@@ -1,0 +1,6 @@
+# Claims ledger for .github (schema evidence-kernel/claims@1, https://github.com/chethandvg/evidence-kernel).
+# Infrastructure: no claims yet.
+schema: evidence-kernel/claims@1
+repo: .github
+prefix: shared
+claims: []

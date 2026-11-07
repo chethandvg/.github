@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Build the WebAssembly bindings and run their golden-vector tests in Node.
+name: wasm-ci
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: Directory of the WebAssembly bindings (contains Cargo.toml and package.json).
+        type: string
+        default: bindings/wasm
+      node-version:
+        type: string
+        default: "24"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: wasm bindings
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.path }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.path }}
+      - name: Read the pinned wasm-bindgen version
+        id: wb
+        run: |
+          version=$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' Cargo.toml)
+          test -n "$version" || { echo "::error::Pin wasm-bindgen exactly (wasm-bindgen = \"=x.y.z\") in $PWD/Cargo.toml"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@${{ steps.wb.outputs.version }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm test

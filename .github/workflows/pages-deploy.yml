@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# Build a static site with Node and deploy it to GitHub Pages. SITE_URL comes
+# from site.json, so switching to a custom domain needs no change here.
+# Callers must grant: contents: read, pages: write, id-token: write.
+name: pages-deploy
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "24"
+      build-command:
+        type: string
+        default: npm run build
+      output-dir:
+        type: string
+        default: dist
+      site-json-url:
+        type: string
+        default: https://raw.githubusercontent.com/chethandvg/.github/main/site.json
+      deploy:
+        description: Deploy after building (pass false for pull requests).
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+      - name: Read SITE_URL
+        id: site
+        run: echo "url=$(curl -fsSL "${{ inputs.site-json-url }}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["site_url"])')" >> "$GITHUB_OUTPUT"
+      - run: npm ci --no-audit --no-fund
+      - run: ${{ inputs.build-command }}
+        env:
+          SITE_URL: ${{ steps.site.outputs.url }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ inputs.output-dir }}
+
+  deploy:
+    needs: build
+    if: inputs.deploy
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

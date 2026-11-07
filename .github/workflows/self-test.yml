@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Lint this repo's workflows and check its own links.
+name: self-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+      - name: registry.json and site.json are valid JSON
+        run: python3 -c 'import json; [json.load(open(f)) for f in ("registry.json", "site.json")]'
+
+  site-url:
+    uses: ./.github/workflows/site-url-check.yml

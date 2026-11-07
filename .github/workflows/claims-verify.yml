@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Validate claims.yaml, resolve every cited DOI/PMID (failing on retractions),
+# check cross-repo claim dependencies, and keep the README claims table current.
+name: claims-verify
+
+on:
+  workflow_call:
+    inputs:
+      ek-spec:
+        description: pip requirement for evidence-kernel ("." inside evidence-kernel itself).
+        type: string
+        default: "evidence-kernel @ git+https://github.com/chethandvg/evidence-kernel@v0.1.0"
+      registry-url:
+        type: string
+        default: https://raw.githubusercontent.com/chethandvg/.github/main/registry.json
+
+permissions:
+  contents: read
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install "${{ inputs.ek-spec }}"
+      - name: Schema and cross-repo dependencies
+        run: ek validate claims.yaml --registry "${{ inputs.registry-url }}"
+      - name: Cited sources resolve and are not retracted
+        run: ek resolve claims.yaml
+      - name: README claims table is up to date
+        run: ek readme-table claims.yaml README.md --check
+      - name: Golden vectors are valid and name real claims
+        if: hashFiles('vectors/*.json') != ''
+        run: ek vectors claims.yaml vectors

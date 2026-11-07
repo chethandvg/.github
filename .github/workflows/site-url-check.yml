@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fail if any tracked file links to the project site under an address other
+# than the current SITE_URL (for example after a switch to a custom domain).
+name: site-url-check
+
+on:
+  workflow_call:
+    inputs:
+      site-json-url:
+        type: string
+        default: https://raw.githubusercontent.com/chethandvg/.github/main/site.json
+
+permissions:
+  contents: read
+
+jobs:
+  site-url:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: curl -fsSL "${{ inputs.site-json-url }}" -o "$RUNNER_TEMP/site.json"
+      - name: Check site URLs
+        shell: python
+        run: |
+          import json, os, re, subprocess, sys
+          from urllib.parse import urlparse
+
+          cfg = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "site.json"), encoding="utf-8"))
+          site = urlparse(cfg["site_url"]).netloc.lower()
+          watched = {site, f'{cfg["owner"]}.github.io'.lower(), *(h.lower() for h in cfg.get("previous_hosts", []))}
+          url = re.compile(r"https?://([A-Za-z0-9.-]+)")
+          files = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout.decode().split("\0")
+          bad = []
+          for path in filter(None, files):
+              try:
+                  text = open(path, encoding="utf-8").read()
+              except (UnicodeDecodeError, OSError):
+                  continue  # binary or unreadable files cannot hold links we manage
+              for no, line in enumerate(text.splitlines(), 1):
+                  for m in url.finditer(line):
+                      host = m.group(1).lower()
+                      if host in watched and host != site:
+                          bad.append(f"::error file={path},line={no}::links to {host}; the site is now {site}")
+          print("\n".join(bad) or f"All site links use {site}.")
+          sys.exit(1 if bad else 0)

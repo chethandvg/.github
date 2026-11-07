@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Build the Lean proofs, audit their axioms, and check that every P-level
+# claim in claims.yaml names a theorem that really exists.
+name: lean-check
+
+on:
+  workflow_call:
+    inputs:
+      lake-dir:
+        description: Directory of the Lake package.
+        type: string
+        default: proofs
+      ek-spec:
+        description: pip requirement for evidence-kernel.
+        type: string
+        default: "evidence-kernel @ git+https://github.com/chethandvg/evidence-kernel@v0.1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and audit axioms (no sorry; only propext, Classical.choice, Quot.sound)
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: ${{ inputs.lake-dir }}
+          auto-config: false
+          build: true
+          axiom-audit: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install "${{ inputs.ek-spec }}"
+      - name: Every P claim names a real theorem
+        run: ek lean-links claims.yaml --lake-dir "${{ inputs.lake-dir }}"

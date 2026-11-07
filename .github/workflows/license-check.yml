@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+# Enforce the dependency licence policy: permissive licences only (no GPL/AGPL).
+# Rust and Python dependencies fail the build; npm dependencies are reported,
+# because site build tools are not distributed.
+name: license-check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  licences:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust - install cargo-deny
+        if: hashFiles('**/Cargo.toml') != ''
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: Rust - check dependency licences
+        if: hashFiles('**/Cargo.toml') != ''
+        run: |
+          cat > "$RUNNER_TEMP/deny.toml" <<'EOF'
+          [licenses]
+          allow = ["Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause", "BSD-3-Clause",
+                   "ISC", "Zlib", "Unicode-3.0", "CC0-1.0", "BSL-1.0",
+                   "PolyForm-Noncommercial-1.0.0"]
+          confidence-threshold = 0.9
+          EOF
+          status=0
+          while IFS= read -r manifest; do
+            echo "::group::$manifest"
+            cargo deny --manifest-path "$manifest" check licenses --config "$RUNNER_TEMP/deny.toml" || status=1
+            echo "::endgroup::"
+          done < <(git ls-files '*Cargo.toml' 'Cargo.toml')
+          exit $status
+
+      - uses: actions/setup-python@v7
+        if: hashFiles('pyproject.toml') != '' && hashFiles('Cargo.toml') == ''
+        with:
+          python-version: "3.13"
+      - name: Python - check dependency licences
+        if: hashFiles('pyproject.toml') != '' && hashFiles('Cargo.toml') == ''
+        run: |
+          python -m venv "$RUNNER_TEMP/venv" && . "$RUNNER_TEMP/venv/bin/activate"
+          pip install --quiet . pip-licenses
+          pip-licenses --from=mixed --partial-match \
+            --ignore-packages pip pip-licenses prettytable wcwidth tomli "$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["name"])')" \
+            --allow-only "MIT;BSD;Apache;ISC;Python Software Foundation;PSF;Mozilla Public License 2.0;Unlicense"
+
+      - uses: actions/setup-node@v7
+        if: hashFiles('package-lock.json') != ''
+        with:
+          node-version: "24"
+      - name: npm - report dependency licences
+        if: hashFiles('package-lock.json') != ''
+        run: |
+          npm ci --no-audit --no-fund --ignore-scripts
+          npx --yes license-checker-rseidelsohn --production --summary || true
